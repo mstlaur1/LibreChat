@@ -327,6 +327,7 @@ const loadTools = async ({
       requestedTools[tool] = async () => {
         toolContextMap[tool] = buildWebSearchContext();
         return createSearchTool({
+          topResults: webSearch?.topResults ?? 2,
           ...result.authResult,
           onSearchResults,
           onGetHighlights,
