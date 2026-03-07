@@ -372,10 +372,10 @@ class AgentClient extends BaseClient {
   /**
    * Creates a promise that resolves with the memory promise result or undefined after a timeout
    * @param {Promise<(TAttachment | null)[] | undefined>} memoryPromise - The memory promise to await
-   * @param {number} timeoutMs - Timeout in milliseconds (default: 3000)
+   * @param {number} timeoutMs - Timeout in milliseconds (default: 10000)
    * @returns {Promise<(TAttachment | null)[] | undefined>}
    */
-  async awaitMemoryWithTimeout(memoryPromise, timeoutMs = 3000) {
+  async awaitMemoryWithTimeout(memoryPromise, timeoutMs = 10000) {
     if (!memoryPromise) {
       return;
     }
@@ -389,7 +389,7 @@ class AgentClient extends BaseClient {
       return attachments;
     } catch (error) {
       if (error.message === 'Memory processing timeout') {
-        logger.warn('[AgentClient] Memory processing timed out after 3 seconds');
+        logger.warn('[AgentClient] Memory processing timed out after 10 seconds');
       } else {
         logger.error('[AgentClient] Error processing memory:', error);
       }
@@ -572,20 +572,10 @@ class AgentClient extends BaseClient {
       const memoryConfig = appConfig.memory;
       const messageWindowSize = memoryConfig?.messageWindowSize ?? 5;
 
-      let messagesToProcess = [...messages];
-      if (messages.length > messageWindowSize) {
-        for (let i = messages.length - messageWindowSize; i >= 0; i--) {
-          const potentialWindow = messages.slice(i, i + messageWindowSize);
-          if (potentialWindow[0]?.role === 'user') {
-            messagesToProcess = [...potentialWindow];
-            break;
-          }
-        }
-
-        if (messagesToProcess.length === messages.length) {
-          messagesToProcess = [...messages.slice(-messageWindowSize)];
-        }
-      }
+      // Only send user messages — facts worth memorizing come from the user
+      let messagesToProcess = messages
+        .filter((msg) => msg.role === 'user' || msg._getType?.() === 'human')
+        .slice(-messageWindowSize);
 
       const filteredMessages = messagesToProcess.map((msg) => this.filterImageUrls(msg));
       const bufferString = getBufferString(filteredMessages);
