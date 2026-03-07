@@ -1,0 +1,177 @@
+'use strict';
+
+var handlers = require('./tools/handlers.cjs');
+var _enum = require('./common/enum.cjs');
+
+class HandlerRegistry {
+    handlers = new Map();
+    register(eventType, handler) {
+        this.handlers.set(eventType, handler);
+    }
+    getHandler(eventType) {
+        return this.handlers.get(eventType);
+    }
+}
+class ModelEndHandler {
+    collectedUsage;
+    constructor(collectedUsage) {
+        if (collectedUsage && !Array.isArray(collectedUsage)) {
+            throw new Error('collectedUsage must be an array');
+        }
+        this.collectedUsage = collectedUsage;
+    }
+    async handle(event, data, metadata, graph) {
+        if (!graph || !metadata) {
+            console.warn(`Graph or metadata not found in ${event} event`);
+            return;
+        }
+        const usage = data?.output?.usage_metadata;
+        if (usage != null && this.collectedUsage != null) {
+            this.collectedUsage.push(usage);
+        }
+        if (metadata.ls_provider === 'FakeListChatModel') {
+            return handlers.handleToolCalls(data?.output?.tool_calls, metadata, graph);
+        }
+        console.log(`====== ${event.toUpperCase()} ======`);
+        console.dir({
+            usage,
+        }, { depth: null });
+        const agentContext = graph.getAgentContext(metadata);
+        if (agentContext.provider !== _enum.Providers.GOOGLE &&
+            agentContext.provider !== _enum.Providers.BEDROCK) {
+            return;
+        }
+        await handlers.handleToolCalls(data?.output?.tool_calls, metadata, graph);
+    }
+}
+class ToolEndHandler {
+    callback;
+    logger;
+    constructor(callback, logger) {
+        this.callback = callback;
+        this.logger = logger;
+    }
+    /**
+     * Handles on_tool_end events from the for-await stream consumer.
+     *
+     * This handler is now purely a consumer callback — tool completion
+     * (ON_RUN_STEP_COMPLETED dispatch + session context storage) is handled
+     * in graph context by ToolNode directly, eliminating the race between
+     * the stream consumer and graph execution.
+     */
+    async handle(event, data, metadata, graph) {
+        try {
+            if (!graph || !metadata) {
+                if (this.logger) {
+                    this.logger.warn(`Graph or metadata not found in ${event} event`);
+                }
+                else {
+                    console.warn(`Graph or metadata not found in ${event} event`);
+                }
+                return;
+            }
+            const toolEndData = data;
+            if (!toolEndData?.output) {
+                if (this.logger) {
+                    this.logger.warn('No output found in tool_end event');
+                }
+                else {
+                    console.warn('No output found in tool_end event');
+                }
+                return;
+            }
+            if (metadata[_enum.Constants.PROGRAMMATIC_TOOL_CALLING] === true) {
+                return;
+            }
+            if (this.callback) {
+                await this.callback(toolEndData, metadata);
+            }
+        }
+        catch (error) {
+            if (this.logger) {
+                this.logger.error('Error handling tool_end event:', error);
+            }
+            else {
+                console.error('Error handling tool_end event:', error);
+            }
+        }
+    }
+}
+class TestLLMStreamHandler {
+    handle(event, data) {
+        const chunk = data?.chunk;
+        const isMessageChunk = !!(chunk && 'message' in chunk);
+        const msg = isMessageChunk ? chunk.message : undefined;
+        if (msg && msg.tool_call_chunks && msg.tool_call_chunks.length > 0) {
+            console.log(msg.tool_call_chunks);
+        }
+        else if (msg && msg.content) {
+            if (typeof msg.content === 'string') {
+                process.stdout.write(msg.content);
+            }
+        }
+    }
+}
+class TestChatStreamHandler {
+    handle(event, data) {
+        const chunk = data?.chunk;
+        const isContentChunk = !!(chunk && 'content' in chunk);
+        const content = isContentChunk && chunk.content;
+        if (!content || !isContentChunk) {
+            return;
+        }
+        if (chunk.tool_call_chunks && chunk.tool_call_chunks.length > 0) {
+            console.dir(chunk.tool_call_chunks, { depth: null });
+        }
+        if (typeof content === 'string') {
+            process.stdout.write(content);
+        }
+        else {
+            console.dir(content, { depth: null });
+        }
+    }
+}
+class LLMStreamHandler {
+    handle(event, data, metadata) {
+        const chunk = data?.chunk;
+        const isMessageChunk = !!(chunk && 'message' in chunk);
+        const msg = isMessageChunk && chunk.message;
+        if (metadata) {
+            console.log(metadata);
+        }
+        if (msg && msg.tool_call_chunks && msg.tool_call_chunks.length > 0) {
+            console.log(msg.tool_call_chunks);
+        }
+        else if (msg && msg.content) {
+            if (typeof msg.content === 'string') {
+                // const text_delta = msg.content;
+                // dispatchCustomEvent(GraphEvents.CHAT_MODEL_STREAM, { chunk }, config);
+                process.stdout.write(msg.content);
+            }
+        }
+    }
+}
+const createMetadataAggregator = (_collected) => {
+    const collected = _collected || [];
+    const handleLLMEnd = (output) => {
+        const { generations } = output;
+        const lastMessageOutput = generations[generations.length - 1]?.[0];
+        if (!lastMessageOutput) {
+            return;
+        }
+        const { message } = lastMessageOutput;
+        if (message?.response_metadata) {
+            collected.push(message.response_metadata);
+        }
+    };
+    return { handleLLMEnd, collected };
+};
+
+exports.HandlerRegistry = HandlerRegistry;
+exports.LLMStreamHandler = LLMStreamHandler;
+exports.ModelEndHandler = ModelEndHandler;
+exports.TestChatStreamHandler = TestChatStreamHandler;
+exports.TestLLMStreamHandler = TestLLMStreamHandler;
+exports.ToolEndHandler = ToolEndHandler;
+exports.createMetadataAggregator = createMetadataAggregator;
+//# sourceMappingURL=events.cjs.map
