@@ -47,8 +47,6 @@ COPY --chown=node:node agents-dist/ ./node_modules/@librechat/agents/dist/
 RUN \
     # React client build with configurable memory
     NODE_OPTIONS="--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE}" npm run frontend; \
-    # Vite sets publicDir=false in production — copy custom assets manually
-    cp client/public/context-indicator.js client/dist/context-indicator.js; \
     # Remove dead copy of agents-dist (already overlaid into node_modules)
     rm -rf /app/agents-dist; \
     npm prune --production; \
