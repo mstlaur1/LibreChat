@@ -174,14 +174,20 @@
     setInterval(poll, POLL_INTERVAL);
     poll();
 
+    // Debounced MutationObserver — don't fire on every DOM mutation
+    var remountTimer = null;
     var observer = new MutationObserver(function() {
-      if (!document.getElementById('context-indicator')) {
-        indicator = null;
-        tooltip = null;
-        compactBtn = null;
-        mountIndicator();
-        if (lastData) updateDisplay(lastData);
-      }
+      if (remountTimer) return;
+      remountTimer = setTimeout(function() {
+        remountTimer = null;
+        if (!document.getElementById('context-indicator')) {
+          indicator = null;
+          tooltip = null;
+          compactBtn = null;
+          mountIndicator();
+          if (lastData) updateDisplay(lastData);
+        }
+      }, 500);
     });
     observer.observe(document.body, { childList: true, subtree: true });
   }
