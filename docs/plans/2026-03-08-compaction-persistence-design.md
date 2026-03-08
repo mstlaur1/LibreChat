@@ -87,26 +87,15 @@ Reason: compaction (context threshold exceeded)
 
 ### Trigger Mechanism
 
-**Option chosen: Proxy signals fork via custom SSE event.**
+**Compaction lives entirely in the fork.** The proxy is not involved.
 
-The proxy already detects when compaction is needed (token count > threshold). After compaction runs in-memory (for the current request), proxy emits:
-```
-event: compaction
-data: {"conversationId": "...", "messageCount": 4}
-```
+The fork's compact endpoint handles everything: token counting, LexRank summarization, MongoDB persistence, and .md export. The proxy's compaction code is removed after Phase 3 is stable (Phase 5 cleanup).
 
-The fork's streaming handler catches this event and calls the compact endpoint to persist the compaction to MongoDB. This way:
-- Proxy handles the LLM-facing compaction (immediate, for the current request)
-- Fork handles persistence (async, for future sessions)
-- No duplicate compaction logic needed initially
+**Trigger options** (both supported):
+- **Manual**: User clicks "Compact" in context indicator → `POST /api/conversations/:id/compact`
+- **Auto**: The fork checks token count after each response. If `prompt_tokens > COMPACTION_THRESHOLD`, compact before the next turn. Token count comes from llama-server usage data (already forwarded through proxy in the SSE stream).
 
-**Future option**: Move compaction logic entirely to the fork (JS port). Proxy becomes a pure passthrough for compaction. This decouples the systems but requires the JS port to be tested and trusted first.
-
-**Pragmatic phasing**:
-1. First: JS port of LexRank + compact endpoint + .md export + MongoDB persistence
-2. Second: Wire proxy to emit SSE event after compaction
-3. Third: Fork calls compact endpoint on SSE event
-4. Fourth (optional): Move compaction trigger to fork, remove from proxy
+**Why not proxy-side**: The proxy rewrites messages in-memory but can't persist to MongoDB. This created the original bug — compaction lost on session resume. Moving compaction to the fork eliminates the split-brain problem entirely.
 
 ### Message Schema Mapping
 
@@ -154,8 +143,8 @@ For NAS: `- /mnt/nas/ai-exports:/app/exports`
 - `api/server/routes/index.js` — Register `/api/conversations/:id/compact` route
 - `docker-compose.yml.fork` — Add exports volume
 
-### Proxy Changes (later phase)
-- `reasoning-proxy.py` — Emit `event: compaction` SSE event after in-memory compaction
+### Proxy Changes (Phase 5 cleanup)
+- `reasoning-proxy.py` — Remove `compact_conversation()`, `_lexrank_summarize()`, `_extract_entities()`, `_CUE_PHRASES`, compaction trigger logic, `/proxy/compact` endpoint (~430 lines)
 
 ## Testing
 
