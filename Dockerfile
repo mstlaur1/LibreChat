@@ -5,7 +5,7 @@ FROM node:20-alpine AS node
 
 # Install jemalloc
 RUN apk add --no-cache jemalloc
-RUN apk add --no-cache python3 py3-pip uv
+RUN apk add --no-cache python3
 
 # Set environment variable to use jemalloc
 ENV LD_PRELOAD=/usr/lib/libjemalloc.so.2
@@ -49,6 +49,8 @@ RUN \
     NODE_OPTIONS="--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE}" npm run frontend; \
     # Vite sets publicDir=false in production — copy custom assets manually
     cp client/public/context-indicator.js client/dist/context-indicator.js; \
+    # Remove dead copy of agents-dist (already overlaid into node_modules)
+    rm -rf /app/agents-dist; \
     npm prune --production; \
     npm cache clean --force
 
