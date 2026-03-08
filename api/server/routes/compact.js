@@ -11,6 +11,28 @@ const { Message } = require('~/db/models');
 
 const EXPORT_DIR = process.env.COMPACTION_EXPORT_DIR || '/app/exports';
 
+/**
+ * Extract readable text from a LibreChat message.
+ * User messages store text in `text` field. Assistant messages may store
+ * text in a `content` array of parts (type: 'text', 'think', 'tool_call').
+ */
+function extractText(msg) {
+  // Try text field first
+  if (typeof msg.text === 'string' && msg.text.length > 0) {
+    return msg.text;
+  }
+  // Fall back to content array (assistant messages with rich content)
+  if (Array.isArray(msg.content)) {
+    const textParts = msg.content
+      .filter((p) => p && p.type === 'text' && typeof p.text === 'string')
+      .map((p) => p.text);
+    if (textParts.length > 0) {
+      return textParts.join('\n');
+    }
+  }
+  return '';
+}
+
 const router = express.Router();
 router.use(requireJwtAuth);
 
@@ -67,7 +89,7 @@ router.post('/:conversationId/compact', async (req, res) => {
         role = 'assistant';
       }
 
-      const content = typeof msg.text === 'string' ? msg.text : '';
+      const content = extractText(msg);
       if (content) {
         simpleMessages.push({ role, content });
       }
@@ -82,7 +104,7 @@ router.post('/:conversationId/compact', async (req, res) => {
     // 5. Export full history to .md file
     const exportMessages = messages.map((msg) => ({
       role: msg.isCreatedByUser ? 'user' : 'assistant',
-      content: typeof msg.text === 'string' ? msg.text : '',
+      content: extractText(msg),
       createdAt: msg.createdAt,
       sender: msg.sender,
       name: msg.name,
