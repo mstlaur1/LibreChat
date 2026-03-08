@@ -3,7 +3,7 @@
 (function() {
   'use strict';
 
-  var MAX_TOKENS = 81920;
+  var MAX_TOKENS = 75000;
   var POLL_INTERVAL = 3000;
   var indicator = null;
   var tooltip = null;
@@ -36,15 +36,31 @@
     compactBtn.style.cssText = 'display:none;margin-left:8px;font-size:11px;padding:1px 8px;border:1px solid #45475a;border-radius:4px;background:#313244;color:#cdd6f4;cursor:pointer;font-family:monospace;vertical-align:middle;';
     compactBtn.addEventListener('click', function(e) {
       e.stopPropagation();
+      // Extract conversationId from URL: /c/{conversationId}
+      var match = window.location.pathname.match(/^\/c\/([^/]+)/);
+      if (!match) {
+        compactBtn.textContent = 'No convo';
+        setTimeout(function() { compactBtn.textContent = 'Compact'; }, 2000);
+        return;
+      }
+      var conversationId = match[1];
       compactBtn.textContent = 'Compacting...';
       compactBtn.disabled = true;
-      fetch('/proxy/compact', { method: 'POST' })
-        .then(function() {
-          compactBtn.textContent = 'Queued';
-          setTimeout(function() {
-            compactBtn.textContent = 'Compact';
+      fetch('/api/conversations/' + conversationId + '/compact', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          if (data.success) {
+            compactBtn.textContent = 'Done';
+            showCompactionNotice();
+            // Reload to show compacted messages
+            setTimeout(function() { window.location.reload(); }, 2000);
+          } else {
+            compactBtn.textContent = data.error || 'Error';
             compactBtn.disabled = false;
-          }, 5000);
+          }
         })
         .catch(function() {
           compactBtn.textContent = 'Error';

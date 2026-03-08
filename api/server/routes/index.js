@@ -25,9 +25,11 @@ const tags = require('./tags');
 const auth = require('./auth');
 const keys = require('./keys');
 const user = require('./user');
+const compact = require('./compact');
 const mcp = require('./mcp');
 
 module.exports = {
+  compact,
   mcp,
   auth,
   adminAuth,
