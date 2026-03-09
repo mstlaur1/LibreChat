@@ -266,6 +266,11 @@ const messagesSiblingIdxFamily = atomFamily<number, string | null | undefined>({
   default: 0,
 });
 
+const compactionArmed = atom<string | null>({
+  key: 'compactionArmed',
+  default: null,
+});
+
 function useCreateConversationAtom(key: string | number) {
   const hasSetConversation = useSetConvoContext();
   const [keys, setKeys] = useRecoilState(conversationKeysAtom);
@@ -426,4 +431,5 @@ export default {
   useClearLatestMessages,
   showPromptsPopoverFamily,
   updateConversationSelector,
+  compactionArmed,
 };

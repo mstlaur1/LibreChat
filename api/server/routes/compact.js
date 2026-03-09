@@ -118,11 +118,12 @@ router.post('/:conversationId/compact', async (req, res) => {
     });
 
     const removedCount = messages.length;
+    const skipLastUser = req.body?.skipLastUser === true;
 
     // 6. Delete all old messages
     await deleteMessages({ conversationId });
 
-    // 7. Insert 3 new messages: summary user, assistant ack, latest user msg
+    // 7. Insert new messages: system summary + assistant ack (+ optional user msg)
     // Preserve the original conversation's endpoint and model from the last assistant message
     const lastAssistantMsg = [...messages].reverse().find((m) => !m.isCreatedByUser);
     const endpoint = lastAssistantMsg?.endpoint || convo.endpoint || '';
@@ -130,7 +131,6 @@ router.post('/:conversationId/compact', async (req, res) => {
 
     const summaryMsgId = uuidv4();
     const ackMsgId = uuidv4();
-    const latestMsgId = uuidv4();
     const now = new Date();
 
     const newMessages = [
@@ -140,8 +140,8 @@ router.post('/:conversationId/compact', async (req, res) => {
         parentMessageId: Constants.NO_PARENT,
         user: userId,
         text: result.summaryContent,
-        sender: 'User',
-        isCreatedByUser: true,
+        sender: 'System',
+        isCreatedByUser: false,
         endpoint,
         model,
         createdAt: new Date(now.getTime()),
@@ -160,7 +160,11 @@ router.post('/:conversationId/compact', async (req, res) => {
         createdAt: new Date(now.getTime() + 1),
         updatedAt: new Date(now.getTime() + 1),
       },
-      {
+    ];
+
+    if (!skipLastUser) {
+      const latestMsgId = uuidv4();
+      newMessages.push({
         messageId: latestMsgId,
         conversationId,
         parentMessageId: ackMsgId,
@@ -172,8 +176,8 @@ router.post('/:conversationId/compact', async (req, res) => {
         model,
         createdAt: new Date(now.getTime() + 2),
         updatedAt: new Date(now.getTime() + 2),
-      },
-    ];
+      });
+    }
 
     await Message.insertMany(newMessages);
 
@@ -184,13 +188,15 @@ router.post('/:conversationId/compact', async (req, res) => {
       { context: `POST /api/conversations/${conversationId}/compact` },
     );
 
-    // 8. Return success response
+    // 8. Return success response (include full messages for client state update)
     res.status(200).json({
       success: true,
       exported: exportedPath,
       messages_removed: removedCount,
       summary_sentences: result.selectedCount,
-      new_message_count: 3,
+      new_message_count: newMessages.length,
+      ackMsgId,
+      newMessages,
     });
   } catch (error) {
     logger.error('[compact] Error compacting conversation', error);

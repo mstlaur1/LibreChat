@@ -42,6 +42,8 @@ export default function NewChat({
         window.open('/c/new', '_blank');
         return;
       }
+      // Fire cache prewarm for system prompt (fire-and-forget)
+      fetch('/proxy/prewarm', { method: 'POST' }).catch(() => {});
       clearMessagesCache(queryClient, conversation?.conversationId);
       queryClient.invalidateQueries([QueryKeys.messages]);
       newConvo();

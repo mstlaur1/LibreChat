@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useRecoilState } from 'recoil';
 import { useParams } from 'react-router-dom';
 import { Constants } from 'librechat-data-provider';
-import { useAuthContext } from '~/hooks/AuthContext';
+import store from '~/store';
 
 const MAX_TOKENS = 75000;
+const MIN_COMPACT_TOKENS = 10000;
 const POLL_INTERVAL = 3000;
 
 interface ContextData {
@@ -28,12 +30,13 @@ function getColor(ratio: number): string {
 
 export default function ContextIndicator() {
   const { conversationId } = useParams();
-  const { token } = useAuthContext();
   const [data, setData] = useState<ContextData | null>(null);
   const [showTooltip, setShowTooltip] = useState(false);
-  const [compactState, setCompactState] = useState<'idle' | 'working' | 'done' | 'error'>('idle');
   const [toast, setToast] = useState(false);
   const lastCompactionTs = useRef(-1);
+  const [compactionArmed, setCompactionArmed] = useRecoilState(store.compactionArmed);
+
+  const isArmed = compactionArmed === conversationId;
 
   // Poll /proxy/context
   useEffect(() => {
@@ -78,31 +81,16 @@ export default function ContextIndicator() {
     setTimeout(() => setToast(false), 4000);
   }, []);
 
-  const handleCompact = useCallback(async () => {
-    if (!conversationId || !token) return;
-    setCompactState('working');
-    try {
-      const res = await fetch(`/api/conversations/${conversationId}/compact`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      const result = await res.json();
-      if (result.success) {
-        setCompactState('done');
-        showToastNotice();
-        setTimeout(() => window.location.reload(), 2000);
-      } else {
-        setCompactState('error');
-        setTimeout(() => setCompactState('idle'), 3000);
-      }
-    } catch {
-      setCompactState('error');
-      setTimeout(() => setCompactState('idle'), 3000);
+  const handleToggleArm = useCallback(() => {
+    if (!conversationId) return;
+    if (isArmed) {
+      localStorage.removeItem('compaction_armed');
+      setCompactionArmed(null);
+    } else {
+      localStorage.setItem('compaction_armed', conversationId);
+      setCompactionArmed(conversationId);
     }
-  }, [conversationId, token, showToastNotice]);
+  }, [conversationId, isArmed, setCompactionArmed]);
 
   if (!data || !data.prompt_tokens) return null;
 
@@ -110,6 +98,7 @@ export default function ContextIndicator() {
   const max = data.max_tokens || MAX_TOKENS;
   const ratio = pt / max;
   const bd = data.breakdown || {};
+  const belowThreshold = pt < MIN_COMPACT_TOKENS;
 
   const tooltipLines = [
     bd.system ? `System:      ${formatTokens(bd.system).padStart(7)}` : '',
@@ -119,15 +108,6 @@ export default function ContextIndicator() {
     `Total:       ${formatTokens(pt).padStart(7)} / ${formatTokens(max)}`,
     `Used:        ${(ratio * 100).toFixed(1)}%`,
   ].filter(Boolean);
-
-  const compactLabel =
-    compactState === 'working'
-      ? 'Compacting...'
-      : compactState === 'done'
-        ? 'Done'
-        : compactState === 'error'
-          ? 'Error'
-          : 'Compact';
 
   return (
     <>
@@ -141,14 +121,21 @@ export default function ContextIndicator() {
           Context used: {formatTokens(pt)} / {formatTokens(max)}
         </span>
 
-        {showTooltip && pt > 0 && (
+        {/* Show button on hover OR when armed (armed stays visible) */}
+        {(showTooltip || isArmed) && pt > 0 && (
           <button
             type="button"
-            className="ml-2 cursor-pointer rounded border border-border-medium bg-surface-secondary px-2 py-px font-mono text-xs text-text-secondary hover:bg-surface-tertiary"
-            disabled={compactState !== 'idle'}
-            onClick={handleCompact}
+            className={
+              isArmed
+                ? 'ml-2 cursor-pointer rounded border border-yellow-500 bg-yellow-500/10 px-2 py-px font-mono text-xs text-yellow-500 hover:bg-yellow-500/20'
+                : belowThreshold
+                  ? 'ml-2 cursor-not-allowed rounded border border-border-medium bg-surface-secondary px-2 py-px font-mono text-xs text-text-tertiary opacity-50'
+                  : 'ml-2 cursor-pointer rounded border border-border-medium bg-surface-secondary px-2 py-px font-mono text-xs text-text-secondary hover:bg-surface-tertiary'
+            }
+            disabled={belowThreshold}
+            onClick={handleToggleArm}
           >
-            {compactLabel}
+            {isArmed ? 'Armed' : 'Compact'}
           </button>
         )}
 
