@@ -47,20 +47,17 @@ const WebSearchToolSchema = {
     required: ['query'],
 };
 const WebSearchToolName = 'web_search';
-const WebSearchToolDescription = `Real-time web search tool. Returns relevant results from the internet.
+const WebSearchToolDescription = `Real-time web search tool. Returns a pre-synthesized summary with inline [1], [2], [3] citations and source URLs.
 
 IMPORTANT RULES:
-- You may search up to 3 times per reply. A counter in results tracks usage (e.g. "Search 1/3"). When 0 remain, stop and synthesize.
+- You may search up to 3 times per reply. A counter in results tracks usage (e.g. "Search 1/3"). When 0 remain, stop and answer from what you have.
 - Each search must target DIFFERENT information. Never repeat or rephrase the same query.
-- After receiving search results, ALWAYS respond with a summary of the findings.
-- If results are insufficient, tell the user and suggest they refine their query.
 - For FOLLOWUP questions: answer from existing search results first. Only search again if the followup asks about a genuinely different topic.
 
 RESPONSE FORMAT:
-- Summarize the key findings from the search results in clear, well-organized prose.
+- Incorporate the search synthesis naturally into your response, preserving the [N] citation numbers.
+- CRITICAL: Inline citations MUST be placed AFTER punctuation (e.g. "prices surged." [1], NOT "prices surged [1].").
 - Use markdown formatting (headers, bullet points, bold) for readability.
-- Cite sources using [N] where N is the source number (e.g. [1], [2]). Place citations inline after the relevant claim. Multiple sources: [1][3].
-- If multiple sources agree, you may combine their information.
 - If sources conflict, note the disagreement and present both perspectives.
 
 QUERY GUIDELINES:

@@ -4,6 +4,96 @@ var axios = require('axios');
 var textsplitters = require('@langchain/textsplitters');
 var utils = require('./utils.cjs');
 
+// --- Content cleaning regexes (ported from proxy's noise-stripping pipeline) ---
+const RE_DASH_LINES = /^-{3,}\s*$/gm;
+const RE_DECORATION = /^[=\-#]{4,}\s*$/gm;
+const RE_BROKEN_LINKS = /\]\(\/[^)\n]+\)/g;
+const RE_NAV_BULLETS = /^\* \S[^\n]{0,25}$\n?/gm;
+const RE_ELEMENTOR = /(?:elementor-action|popup:open|popup:close)[^\s)\]]*/gi;
+const RE_LOGO_IMG = /!\[[^\]]*(?:logo|icon|avatar|badge|seal|favicon)[^\]]*\]\([^)]*\)/gi;
+const RE_BARE_IMG_URL = /^\s*(?:!\[[^\]]*\]\([^)]*\)|https?:\/\/\S+\.(?:png|jpg|jpeg|gif|svg|webp|ico)(?:\?\S*)?)\s*$/gim;
+const RE_CTA_LINES = /^\s*(?:View (?:full )?profile|See all \w+|Sign (?:in|up)|Log in|Follow|Connect|Message|Share|Report|Claim this|Get directions|Write a review|Add a photo|Suggest an edit)\s*$/gim;
+const RE_BLANK_RUNS = /\n{3,}/g;
+// Breadcrumb / site-search UI noise (e.g. "!Search !SiteName Title" or "1. [Home] 2. [News]")
+const RE_BREADCRUMB_NAV = /^\s*(?:\d+\.\s*\[[\w\s]+\]\s*)+\s*$/gm;
+const RE_SEARCH_UI = /^\s*!(?:Search|Filter|Sort)\b[^\n]*$/gm;
+const RE_SITE_CHROME = /^\s*(?:Type keyword|Enter the terms|Search Enter|Main Content|Skip to (?:main |)content)\b[^\n]*$/gim;
+// Translation / language picker links
+const RE_TRANSLATION_LINK = /\[Go to the translated (?:article|page|version)\]/gi;
+// Comment section detection: date-with-time, "says:", standalone "Reply"
+const RE_COMMENT_INDICATOR = /(?:(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}\s+at\s+\d{1,2}:\d{2}|\b\w+\s+says:\s*$|^\s*Reply\s*$)/gim;
+/**
+ * Strip comment sections from scraped content.
+ * Detects clusters of 3+ comment indicators within 2000 chars,
+ * then truncates at the paragraph boundary before the cluster.
+ */
+function stripCommentSection(content) {
+    const indicators = [];
+    let match;
+    // Reset regex state for each call
+    RE_COMMENT_INDICATOR.lastIndex = 0;
+    while ((match = RE_COMMENT_INDICATOR.exec(content)) !== null) {
+        indicators.push(match.index);
+    }
+    if (indicators.length < 3)
+        return content;
+    // Find first cluster: 3+ indicators within 2000 chars
+    for (let i = 0; i <= indicators.length - 3; i++) {
+        const span = indicators[i + 2] - indicators[i];
+        if (span <= 2000) {
+            // Truncate at paragraph boundary before this cluster
+            const cutpoint = content.lastIndexOf('\n\n', indicators[i]);
+            if (cutpoint > content.length * 0.15) {
+                return content.slice(0, cutpoint).trimEnd();
+            }
+            break;
+        }
+    }
+    return content;
+}
+/**
+ * Strip CMS noise, decorative lines, broken links, navigation bullets,
+ * bare image URLs, CTA lines, breadcrumbs, and comment sections from
+ * scraped markdown content.
+ * Called AFTER firecrawl/trafilatura returns content, BEFORE chunking.
+ */
+function cleanScrapedContent(content) {
+    if (!content)
+        return '';
+    // Strip comment sections first (before line-level regex, needs paragraph structure)
+    content = stripCommentSection(content);
+    content = content.replace(RE_DASH_LINES, '');
+    content = content.replace(RE_DECORATION, '');
+    content = content.replace(RE_BROKEN_LINKS, ']');
+    content = content.replace(RE_NAV_BULLETS, '');
+    content = content.replace(RE_ELEMENTOR, '');
+    content = content.replace(RE_LOGO_IMG, '');
+    content = content.replace(RE_BARE_IMG_URL, '');
+    content = content.replace(RE_CTA_LINES, '');
+    content = content.replace(RE_BREADCRUMB_NAV, '');
+    content = content.replace(RE_SEARCH_UI, '');
+    content = content.replace(RE_SITE_CHROME, '');
+    content = content.replace(RE_TRANSLATION_LINK, '');
+    content = content.replace(RE_BLANK_RUNS, '\n\n');
+    return content.trim();
+}
+/**
+ * Quality gate: reject pages dominated by markdown links or too short+linky.
+ * Returns true if content is usable, false if it should be skipped.
+ */
+function isQualityContent(content) {
+    if (!content)
+        return false;
+    const linkChars = Array.from(content.matchAll(/\[[^\]]*\]\([^)]*\)/g)).reduce((sum, m) => sum + m[0].length, 0);
+    const ratio = linkChars / content.length;
+    // >50% links → junk (e.g. nav pages, link farms)
+    if (ratio > 0.5)
+        return false;
+    // Short + linky → junk (e.g. sidebar-only pages)
+    if (content.length < 300 && ratio > 0.3)
+        return false;
+    return true;
+}
 const chunker = {
     cleanText: (text) => {
         if (!text)
@@ -20,8 +110,8 @@ const chunker = {
         return cleanedSpaces.trim();
     },
     splitText: async (text, options) => {
-        const chunkSize = options?.chunkSize ?? 150;
-        const chunkOverlap = options?.chunkOverlap ?? 50;
+        const chunkSize = options?.chunkSize ?? 500;
+        const chunkOverlap = options?.chunkOverlap ?? 100;
         const separators = options?.separators || ['\n\n', '\n'];
         const splitter = new textsplitters.RecursiveCharacterTextSplitter({
             separators,
@@ -359,12 +449,14 @@ const createSourceProcessor = (config = {}, scraperInstance) => {
                         .then(([url, response]) => {
                         const attribution = utils.getAttribution(url, response.data?.metadata, logger_);
                         if (response.success && response.data) {
-                            const [content, references] = scraper.extractContent(response);
+                            const [rawContent, references] = scraper.extractContent(response);
+                            // Clean CMS noise, then basic whitespace normalization
+                            const content = chunker.cleanText(cleanScrapedContent(rawContent));
                             return {
                                 url,
                                 references,
                                 attribution,
-                                content: chunker.cleanText(content),
+                                content,
                             };
                         }
                         else {
@@ -384,6 +476,11 @@ const createSourceProcessor = (config = {}, scraperInstance) => {
                                 return {
                                     ...result,
                                 };
+                            }
+                            // Quality gate: skip highlight extraction for junk pages
+                            if (!isQualityContent(result.content)) {
+                                logger_.debug(`Quality gate rejected: ${result.url} (link-heavy or too short)`);
+                                return { ...result };
                             }
                             const highlights = await getHighlights({
                                 query,
@@ -576,6 +673,8 @@ function updateSourcesWithContent(sources, sourceMap) {
     }
 }
 
+exports.cleanScrapedContent = cleanScrapedContent;
 exports.createSearchAPI = createSearchAPI;
 exports.createSourceProcessor = createSourceProcessor;
+exports.isQualityContent = isQualityContent;
 //# sourceMappingURL=search.cjs.map

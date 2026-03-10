@@ -18,6 +18,10 @@ const JUNK_DOMAINS = new Set([
     'wiktionary.org',
     'ell.stackexchange.com',
     'english.stackexchange.com',
+    'biblegateway.com',
+    'biblia.com',
+    'openbible.info',
+    'bible.com',
 ]);
 function isJunkResult(title, link) {
     if (title && NON_LATIN_RE.test(title))
@@ -47,6 +51,10 @@ function relevanceScore(query, title, snippet) {
         return 1;
     const text = `${title ?? ''} ${snippet ?? ''}`.toLowerCase();
     const hits = keywords.filter((kw) => text.includes(kw)).length;
+    // Require at least 2 keyword hits when query has 3+ keywords.
+    // A single common word match (e.g. "Mark" from "Mark Carney") is not enough.
+    if (keywords.length >= 3 && hits < 2)
+        return 0;
     return hits / keywords.length;
 }
 function rankAndFilter(items, query, minScore = 0.3) {
@@ -79,6 +87,8 @@ function filterArtifactResults(results, query) {
         news: rankAndFilter(results.news, query, 0.2),
     };
 }
+/** Max chars of highlight text to keep per source */
+const HIGHLIGHT_MAX_CHARS = 3000;
 /**
  * Strip markdown images, link markup, raw URLs, and formatting noise
  * from highlight text so the LLM sees only readable content.
@@ -88,12 +98,47 @@ function cleanHighlightText(text) {
         return '';
     return text
         .replace(/!\[[^\]]*\]\([^)]*\)/g, '') // markdown images
+        .replace(/!\[[^\]]*\]\s*/g, '') // orphaned ![alt text] remnants
         .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1') // links → text only
         .replace(/https?:\/\/\S+/g, '') // raw URLs
         .replace(/[*_]{2,}/g, '') // bold/italic artifacts
-        .replace(/\n{3,}/g, '\n\n') // collapse newlines
+        .replace(/\\([-[\]()])/g, '$1') // escaped chars: \- → -, \[ → [
+        .replace(/^\s*\|[\s-|]+\|\s*$/gm, '') // table separators: | --- | --- |
         .replace(/ {2,}/g, ' ') // collapse spaces
+        .replace(/\n{3,}/g, '\n\n') // collapse newlines
         .trim();
+}
+/**
+ * Deduplicate highlights within a single source by checking prefix overlap.
+ * Keeps the higher-scored highlight when two share >60% of their first 200 chars.
+ */
+function deduplicateHighlights(highlights) {
+    if (highlights.length <= 1)
+        return highlights;
+    // Sort by score descending so we keep higher-scored ones
+    const sorted = [...highlights].sort((a, b) => b.score - a.score);
+    const kept = [];
+    const seenPrefixes = [];
+    for (const h of sorted) {
+        const prefix = h.text.slice(0, 200).toLowerCase();
+        const isDupe = seenPrefixes.some((existing) => {
+            // Check overlap: count matching chars in first 200
+            const shorter = Math.min(prefix.length, existing.length);
+            if (shorter === 0)
+                return false;
+            let matches = 0;
+            for (let i = 0; i < shorter; i++) {
+                if (prefix[i] === existing[i])
+                    matches++;
+            }
+            return matches / shorter > 0.6;
+        });
+        if (!isDupe) {
+            kept.push(h);
+            seenPrefixes.push(prefix);
+        }
+    }
+    return kept;
 }
 /**
  * Extract year from a date string. Handles ISO dates, relative dates,
@@ -152,7 +197,7 @@ function buildPreamble(results) {
  * Outputs clean [Source N] / [News N] blocks with URL, attribution, date,
  * and content highlights. No PUA Unicode citation anchors.
  */
-function formatResultsForLLM(turn, results) {
+function formatResultsForLLM(_turn, results) {
     const outputLines = [];
     const references = [];
     // Preamble with counts and date range
@@ -173,11 +218,15 @@ function formatResultsForLLM(turn, results) {
                 outputLines.push(meta);
             outputLines.push('');
             if (s.highlights?.length) {
-                for (const h of s.highlights) {
+                const deduped = deduplicateHighlights(s.highlights);
+                let charBudget = HIGHLIGHT_MAX_CHARS;
+                for (const h of deduped) {
                     const text = cleanHighlightText(h.text);
-                    if (text) {
-                        outputLines.push(text);
+                    if (text && charBudget > 0) {
+                        const trimmed = text.slice(0, charBudget);
+                        outputLines.push(trimmed);
                         outputLines.push('');
+                        charBudget -= trimmed.length;
                     }
                 }
             }
@@ -231,6 +280,8 @@ function formatResultsForLLM(turn, results) {
     };
 }
 
+exports.cleanHighlightText = cleanHighlightText;
+exports.deduplicateHighlights = deduplicateHighlights;
 exports.filterArtifactResults = filterArtifactResults;
 exports.formatResultsForLLM = formatResultsForLLM;
 //# sourceMappingURL=format.cjs.map
