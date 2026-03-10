@@ -231,12 +231,6 @@ const Part = memo(
         />
       );
     }
-  } else if (part.type === ContentTypes.IMAGE_FILE) {
-    const imageFile = part[ContentTypes.IMAGE_FILE];
-    return (
-      <Image imagePath={imageFile.filepath} altText={imageFile.filename ?? 'Uploaded Image'} />
-    );
-  }
 
     return null;
   },
