@@ -47,24 +47,27 @@ const WebSearchToolSchema = {
     required: ['query'],
 };
 const WebSearchToolName = 'web_search';
-const WebSearchToolDescription = `Real-time web search tool. Returns a pre-synthesized summary with inline [1], [2], [3] citations and source URLs.
+const WebSearchToolDescription = `Real-time web search. Results contain numbered sources with [N] citation markers.
 
-IMPORTANT RULES:
-- You may search up to 3 times per reply. A counter in results tracks usage (e.g. "Search 1/3"). When 0 remain, stop and answer from what you have.
+**CITE EVERY FACT FROM SEARCH RESULTS:**
+Use the [N] source numbers provided in the results. Every claim derived from search MUST have a citation.
+- Single: "The population grew 12%." [1]
+- Multiple: "Both studies confirmed the trend." [1] [3]
+- Conflicting: "Source A says X [1], but Source B disagrees [3]."
+
+**CRITICAL:** Citations go AFTER punctuation. Write "prices surged." [1] — NEVER "prices surged [1]."
+**NEVER** omit citations, renumber sources, or use markdown links instead of [N] markers.
+
+SEARCH RULES:
+- Up to 3 searches per reply. A counter tracks usage (e.g. "Search 1/3"). When 0 remain, stop and answer.
 - Each search must target DIFFERENT information. Never repeat or rephrase the same query.
-- For FOLLOWUP questions: answer from existing search results first. Only search again if the followup asks about a genuinely different topic.
+- For followups: answer from existing results first. Only search again for genuinely different topics.
 
-RESPONSE FORMAT:
-- Incorporate the search synthesis naturally into your response, preserving the [N] citation numbers.
-- CRITICAL: Inline citations MUST be placed AFTER punctuation (e.g. "prices surged." [1], NOT "prices surged [1].").
-- Use markdown formatting (headers, bullet points, bold) for readability.
-- If sources conflict, note the disagreement and present both perspectives.
-
-QUERY GUIDELINES:
-- Use specific, targeted keywords rather than full sentences.
-- For recent/current news, use the date parameter (date="d" for past 24h, date="w" for past week) and/or include the current month and year in the query.
-- Set news=true for breaking news or current events topics.
-- Set country for location-specific results (local businesses, regional news).`;
+QUERY TIPS:
+- Use concise keywords, not full sentences.
+- For recent news: use date="d" (24h) or date="w" (week), and/or include current month/year in query.
+- Set news=true for breaking news or current events.
+- Set country for location-specific results.`;
 const WebSearchToolDefinition = {
     name: WebSearchToolName,
     description: WebSearchToolDescription,
