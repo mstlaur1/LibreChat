@@ -42,7 +42,12 @@ RUN \
 COPY --chown=node:node . .
 
 # Overlay custom @librechat/agents build (search tool customizations)
+# Must target BOTH locations: npm hoists to /app/node_modules/ but also
+# installs a nested copy at /app/api/node_modules/ (api/package.json pins
+# @librechat/agents directly). Node resolves from the importing file's
+# directory upward, so /app/api/ finds the nested copy first.
 COPY --chown=node:node agents-dist/ ./node_modules/@librechat/agents/dist/
+COPY --chown=node:node agents-dist/ ./api/node_modules/@librechat/agents/dist/
 
 RUN \
     # React client build with configurable memory
@@ -56,10 +61,3 @@ RUN \
 EXPOSE 3080
 ENV HOST=0.0.0.0
 ENTRYPOINT ["/bin/sh", "/app/scripts/entrypoint.sh"]
-
-# Optional: for client with nginx routing
-# FROM nginx:stable-alpine AS nginx-client
-# WORKDIR /usr/share/nginx/html
-# COPY --from=node /app/client/dist /usr/share/nginx/html
-# COPY client/nginx.conf /etc/nginx/conf.d/default.conf
-# ENTRYPOINT ["nginx", "-g", "daemon off;"]

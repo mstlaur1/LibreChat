@@ -53,11 +53,10 @@ const WebSearchToolDescription = `Real-time web search. Results contain numbered
 
 **CITE EVERY FACT FROM SEARCH RESULTS:**
 Use the [N] source numbers provided in the results. Every claim derived from search MUST have a citation.
-- Single: "The population grew 12%." [1]
-- Multiple: "Both studies confirmed the trend." [1] [3]
+- Single: "The population grew 12% [1]."
+- Multiple: "Both studies confirmed the trend [1] [3]."
 - Conflicting: "Source A says X [1], but Source B disagrees [3]."
 
-**CRITICAL:** Citations go AFTER punctuation. Write "prices surged." [1] — NEVER "prices surged [1]."
 **NEVER** omit citations, renumber sources, or use markdown links instead of [N] markers.
 
 SEARCH RULES:

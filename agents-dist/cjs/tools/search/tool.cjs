@@ -18,7 +18,7 @@ const MAX_OUTPUT_CHARS = 6000;
 // reranked highlights into a coherent answer with inline [N] citations.
 const SYNTH_URL = process.env.LOCAL_SYNTH_URL || 'http://localhost:8087/v1/chat/completions';
 const SYNTH_TIMEOUT = 30000;
-const SYNTH_MAX_SOURCES = 6;
+const SYNTH_MAX_SOURCES = 5;
 /** Max searches the model may perform per reply (enforced by counter in output) */
 const MAX_SEARCHES = 3;
 /**
@@ -65,16 +65,17 @@ async function tryLocalSynthesis(query, results, logger) {
             messages: [
                 {
                     role: 'system',
-                    content: 'You are a search synthesis engine. Given a query and search results, write a thorough, well-structured answer using the provided sources. Cover all key points and details from the sources — do not summarize too aggressively. Use inline citations [1], [2] etc. Use bold headers and bullet points where appropriate. Stick closely to source material but you may add brief context from your knowledge if clearly relevant. Do not list source URLs at the end — they are injected automatically.',
+                    content: 'You are a search synthesis engine. Given a query and search results, write a thorough, well-structured answer using the provided sources. Cover all key points and details from the sources — do not summarize too aggressively. Use inline citations [1], [2] etc. Use bold headers and bullet points where appropriate. Stick closely to source material but you may add brief context from your knowledge if clearly relevant. Do not list source URLs at the end — they are injected automatically. Keep it under 600 words.',
                 },
                 {
                     role: 'user',
-                    content: `/no_think\nQuery: ${query}\n\nSources:\n${sourceText}\n\nSynthesize a clear answer with [N] citations.`,
+                    content: `Query: ${query}\n\nSources:\n${sourceText}\n\nSynthesize a clear answer with [N] citations.`,
                 },
             ],
             temperature: 0.3,
-            max_tokens: 2000,
+            max_tokens: 800,
             stream: false,
+            chat_template_kwargs: { enable_thinking: false },
         }, { timeout: SYNTH_TIMEOUT });
         let answer = resp.data?.choices?.[0]?.message?.content?.trim() ?? '';
         // Strip thinking blocks if present (safety net if /no_think is ignored)
@@ -319,6 +320,7 @@ function createSearchProcessor({ searchAPI, safeSearch, sourceProcessor, onGetHi
     return async function ({ query, date, country, proMode = true, maxSources = 3, onSearchResults, images = false, videos = false, news = false, }) {
         try {
             // Execute parallel searches and merge results
+            const t0 = Date.now();
             const searchResult = await executeParallelSearches({
                 searchAPI,
                 query,
@@ -330,6 +332,7 @@ function createSearchProcessor({ searchAPI, safeSearch, sourceProcessor, onGetHi
                 news,
                 logger,
             });
+            const tSearch = Date.now();
             onSearchResults?.(searchResult);
             const processedSources = await sourceProcessor.processSources({
                 query,
@@ -339,10 +342,13 @@ function createSearchProcessor({ searchAPI, safeSearch, sourceProcessor, onGetHi
                 onGetHighlights,
                 numElements: maxSources,
             });
+            const tScrape = Date.now();
             // Cross-result reranking: collect ALL highlights, rerank, apply tiered selection
             if (reranker) {
                 await crossResultRerank(processedSources, query, reranker, logger);
             }
+            const tRerank = Date.now();
+            logger.info('search pipeline: api=%dms scrape+chunk=%dms rerank=%dms total=%dms', tSearch - t0, tScrape - tSearch, tRerank - tScrape, tRerank - t0);
             return highlights.expandHighlights(processedSources);
         }
         catch (error) {
@@ -380,6 +386,7 @@ function createTool({ schema: schema$1, search, logger, onSearchResults: _onSear
         const country = typeof _c === 'string' && _c ? _c : undefined;
         const turn = runnableConfig.toolCall?.turn ?? 0;
         // Full SearXNG → scrape → clean → rerank pipeline (always runs for UI artifact data)
+        const tPipelineStart = Date.now();
         const searchResult = await search({
             query,
             date,
@@ -393,24 +400,30 @@ function createTool({ schema: schema$1, search, logger, onSearchResults: _onSear
                 query,
             }),
         });
+        const tPipelineDone = Date.now();
         const formatted = format.formatResultsForLLM(turn, searchResult);
         // Try local 4B synthesis for text queries (skip for images/videos)
         let output;
         let references;
         if (!images && !videos) {
+            const tSynthStart = Date.now();
             const synthesized = await tryLocalSynthesis(query, searchResult, logger);
+            const tSynthDone = Date.now();
             if (synthesized) {
                 output = synthesized.text;
                 references = synthesized.references;
+                logger.info('search total: pipeline=%dms synth=%dms total=%dms', tPipelineDone - tPipelineStart, tSynthDone - tSynthStart, tSynthDone - tPipelineStart);
             }
             else {
                 output = formatted.output;
                 references = formatted.references;
+                logger.info('search total: pipeline=%dms synth=skipped total=%dms', tPipelineDone - tPipelineStart, tPipelineDone - tPipelineStart);
             }
         }
         else {
             output = formatted.output;
             references = formatted.references;
+            logger.info('search total: pipeline=%dms (no synth) total=%dms', tPipelineDone - tPipelineStart, tPipelineDone - tPipelineStart);
         }
         // Append search counter so the model knows how many searches remain
         const searchNum = turn + 1;
