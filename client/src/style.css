@@ -531,11 +531,11 @@ select {
 }
 
 .overflow-y-auto {
-  overflow-y: overlay;
+  overflow-y: auto;
 }
 
 .overflow-x-auto {
-  overflow-x: overlay;
+  overflow-x: auto;
 }
 
 .reset-rc-number-input input {

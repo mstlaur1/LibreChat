@@ -232,7 +232,7 @@ const CodeBlock: React.FC<CodeBlockProps> = ({
         plugin={plugin === true}
         allowExecution={allowExecution}
       />
-      <div className={cn(classProp, 'overflow-y-auto p-4')}>
+      <div className={cn(classProp, 'overflow-auto p-4')}>
         <code
           ref={codeRef}
           className={cn(

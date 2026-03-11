@@ -22,6 +22,55 @@ const SYNTH_MAX_SOURCES = 5;
 /** Max searches the model may perform per reply (enforced by counter in output) */
 const MAX_SEARCHES = 3;
 /**
+ * Compute objective quality signals from pipeline data.
+ * These are facts about the search results — not model self-assessment.
+ */
+function computeQualitySignals(query, sources, results) {
+    // Query keyword coverage across all source content
+    const keywords = query
+        .toLowerCase()
+        .split(/\s+/)
+        .filter((w) => w.length > 2);
+    const allText = sources.map((s) => `${s.title} ${s.content}`).join(' ').toLowerCase();
+    const coverage = keywords.length > 0
+        ? keywords.filter((kw) => allText.includes(kw)).length / keywords.length
+        : 1;
+    // Average highlight reranker score
+    const scores = [];
+    for (const sType of ['organic', 'topStories']) {
+        const items = results[sType];
+        if (!items)
+            continue;
+        for (const item of items) {
+            if (item.highlights) {
+                for (const h of item.highlights) {
+                    scores.push(h.score);
+                }
+            }
+        }
+    }
+    const avgScore = scores.length > 0
+        ? scores.reduce((a, b) => a + b, 0) / scores.length
+        : 0;
+    return {
+        sourcesCited: sources.length,
+        queryTermCoverage: coverage,
+        avgRelevance: avgScore,
+        minSourceChars: sources.length > 0
+            ? Math.min(...sources.map((s) => s.content.length))
+            : 0,
+    };
+}
+/**
+ * Format quality signals as a compact hint line for the 122B model.
+ */
+function formatQualityHint(signals) {
+    const rel = signals.avgRelevance >= 0.5 ? 'high'
+        : signals.avgRelevance >= 0.2 ? 'medium' : 'low';
+    const cov = Math.round(signals.queryTermCoverage * 100);
+    return `[Quality: ${signals.sourcesCited} sources, keyword coverage: ${cov}%, relevance: ${rel}, min source: ${signals.minSourceChars} chars]`;
+}
+/**
  * Synthesize search results into a coherent answer using the local 4B model.
  * Collects highlights/snippets from processed results, sends to 4B for synthesis.
  * Returns formatted text with inline [N] citations, or null to fall through.
@@ -56,6 +105,9 @@ async function tryLocalSynthesis(query, results, logger) {
     if (sources.length > SYNTH_MAX_SOURCES) {
         sources.length = SYNTH_MAX_SOURCES;
     }
+    // Compute quality signals from pipeline data (zero-cost — no inference)
+    const quality = computeQualitySignals(query, sources, results);
+    const qualityHint = formatQualityHint(quality);
     const sourceText = sources
         .map((s, i) => `[${i + 1}] ${s.title}\n${s.url}\n${s.content}`)
         .join('\n\n---\n\n');
@@ -65,7 +117,7 @@ async function tryLocalSynthesis(query, results, logger) {
             messages: [
                 {
                     role: 'system',
-                    content: 'You are a search synthesis engine. Given a query and search results, write a thorough, well-structured answer using the provided sources. Cover all key points and details from the sources — do not summarize too aggressively. Use inline citations [1], [2] etc. Use bold headers and bullet points where appropriate. Stick closely to source material but you may add brief context from your knowledge if clearly relevant. Do not list source URLs at the end — they are injected automatically. Keep it under 600 words.',
+                    content: 'You are a search synthesis engine. Given a query and search results, write a thorough, well-structured answer using the provided sources. Cover all key points and details from the sources — do not summarize too aggressively. Use inline citations [1], [2] etc. Use bold headers and bullet points where appropriate. Stick closely to source material but you may add brief context from your knowledge if clearly relevant. Do not list source URLs at the end — they are injected automatically. Keep it under 600 words.\n\nAfter your answer, on a new line starting with "Flags:", note any of these ONLY if clearly present: "sources disagree" (sources contradict each other on a claim), "single-source claim" (a key claim relies on only one source), "query partially answered" (the query asks for things the sources don\'t cover). If none apply, omit the Flags line entirely.',
                 },
                 {
                     role: 'user',
@@ -91,12 +143,12 @@ async function tryLocalSynthesis(query, results, logger) {
             title: s.title,
             attribution: '',
         }));
-        // Append source list so the 122B can see the URLs
-        const lines = [answer, '', 'Sources:'];
+        // Append quality hint + source list so the 122B can assess and cite
+        const lines = [answer, '', qualityHint, '', 'Sources:'];
         for (let i = 0; i < sources.length; i++) {
             lines.push(`[${i + 1}] ${sources[i].url}`);
         }
-        logger.info('Local synthesis: %d chars from %d sources via 4B', answer.length, sources.length);
+        logger.info('Local synthesis: %d chars from %d sources via 4B | %s', answer.length, sources.length, qualityHint);
         return { text: lines.join('\n'), references };
     }
     catch (error) {

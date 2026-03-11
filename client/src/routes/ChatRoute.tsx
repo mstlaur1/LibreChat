@@ -163,7 +163,7 @@ export default function ChatRoute() {
     assistantListMap,
   ]);
 
-  if (endpointsQuery.isLoading || modelsQuery.isLoading) {
+  if (endpointsQuery.isLoading || modelsQuery.isLoading || (conversationId !== Constants.NEW_CONVO && initialConvoQuery.isLoading)) {
     return (
       <div className="flex h-screen items-center justify-center" aria-live="polite" role="status">
         <Spinner className="text-text-primary" />

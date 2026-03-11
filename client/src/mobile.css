@@ -42,7 +42,7 @@
     top: 0;
     bottom: 0;
     background-color: rgba(7, 7, 7, 0.4);
-    padding-left: 420px;
+    padding-left: 0;
     padding-top: 12px;
     opacity: 0;
     transition: all 0.5s;
@@ -154,7 +154,7 @@
     top: 0;
     bottom: 0;
     background-color: rgba(7, 7, 7, 0.4);
-    padding-left: 420px;
+    padding-left: 0;
     padding-top: 12px;
     opacity: 0;
     transition: all 0.5s;
@@ -361,4 +361,22 @@ p.whitespace-pre-wrap a, li a {
 
 .dark p.whitespace-pre-wrap a, .dark li a {
   color: #52a0ff;
+}
+/* iOS safe area support (notch, Dynamic Island) */
+@supports (padding-top: env(safe-area-inset-top)) {
+  .safe-area-top {
+    padding-top: env(safe-area-inset-top);
+  }
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/* Responsive tables on mobile */
+@media (max-width: 767px) {
+  .prose table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
 }
