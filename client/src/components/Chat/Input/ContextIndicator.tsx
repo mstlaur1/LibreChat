@@ -116,23 +116,21 @@ export default function ContextIndicator() {
         style={{ padding: '2px 0', marginBottom: '2px' }}
         onMouseEnter={() => setShowTooltip(true)}
         onMouseLeave={() => setShowTooltip(false)}
+        onClick={() => setShowTooltip((v) => !v)}
       >
         <span className={getColor(ratio)}>
           Context used: {formatTokens(pt)} / {formatTokens(max)}
         </span>
 
-        {/* Show button on hover OR when armed (armed stays visible) */}
-        {(showTooltip || isArmed) && pt > 0 && (
+        {/* Always show button when not below threshold; tooltip still hover/tap only */}
+        {pt > 0 && !belowThreshold && (
           <button
             type="button"
             className={
               isArmed
                 ? 'ml-2 cursor-pointer rounded border border-yellow-500 bg-yellow-500/10 px-2 py-px font-mono text-xs text-yellow-500 hover:bg-yellow-500/20'
-                : belowThreshold
-                  ? 'ml-2 cursor-not-allowed rounded border border-border-medium bg-surface-secondary px-2 py-px font-mono text-xs text-text-tertiary opacity-50'
-                  : 'ml-2 cursor-pointer rounded border border-border-medium bg-surface-secondary px-2 py-px font-mono text-xs text-text-secondary hover:bg-surface-tertiary'
+                : 'ml-2 cursor-pointer rounded border border-border-medium bg-surface-secondary px-2 py-px font-mono text-xs text-text-secondary hover:bg-surface-tertiary'
             }
-            disabled={belowThreshold}
             onClick={handleToggleArm}
           >
             {isArmed ? 'Armed' : 'Compact'}
