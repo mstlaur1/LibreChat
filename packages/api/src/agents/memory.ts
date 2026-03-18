@@ -318,6 +318,17 @@ export async function processMemory({
       deleteMemory,
     });
 
+    // Only include delete tool if user explicitly requests deletion
+    // Small models (4B) cannot reliably follow "never delete" instructions,
+    // so removing the tool entirely is the only reliable guard.
+    const deletionPattern = /\b(forget|remove|delete|erase|clear)\b.*\b(memor|remember)/i;
+    const userWantsDeletion = messages.some((msg) => {
+      const content = typeof msg.content === 'string' ? msg.content : '';
+      return (msg._getType?.() === 'human' || (msg as Record<string, unknown>).role === 'user')
+        && deletionPattern.test(content);
+    });
+    const tools = userWantsDeletion ? [memoryTool, deleteMemoryTool] : [memoryTool];
+
     const currentMemoryTokens = totalTokens;
 
     let memoryStatus = `# Existing memory:\n${memory ?? 'No existing memories'}`;
@@ -449,7 +460,7 @@ ${memory ?? 'No existing memories'}`;
       graphConfig: {
         type: 'standard',
         llmConfig: finalLLMConfig,
-        tools: [memoryTool, deleteMemoryTool],
+        tools,
         instructions: graphInstructions,
         additional_instructions: graphAdditionalInstructions,
         toolEnd: true,

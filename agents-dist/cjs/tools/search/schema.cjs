@@ -49,26 +49,8 @@ const WebSearchToolSchema = {
     required: ['query'],
 };
 const WebSearchToolName = 'web_search';
-const WebSearchToolDescription = `Real-time web search. Results contain numbered sources with [N] citation markers.
-
-**CITE EVERY FACT FROM SEARCH RESULTS:**
-Use the [N] source numbers provided in the results. Every claim derived from search MUST have a citation.
-- Single: "The population grew 12% [1]."
-- Multiple: "Both studies confirmed the trend [1] [3]."
-- Conflicting: "Source A says X [1], but Source B disagrees [3]."
-
-**NEVER** omit citations, renumber sources, or use markdown links instead of [N] markers.
-
-SEARCH RULES:
-- Up to 3 searches per reply. A counter tracks usage (e.g. "Search 1/3"). When 0 remain, stop and answer.
-- Each search must target DIFFERENT information. Never repeat or rephrase the same query.
-- For followups: answer from existing results first. Only search again for genuinely different topics.
-
-QUERY TIPS:
-- Use concise keywords, not full sentences.
-- For recent news: use date="d" (24h) or date="w" (week), and/or include current month/year in query.
-- Set news=true for breaking news or current events.
-- Set country for location-specific results.`;
+const WebSearchToolDescription = `Real-time web search. Returns numbered [N] sources. Max 3 per reply (counter shown).
+TIPS: Concise keywords. date="d"/"w" for recency. news=true for breaking news. country for locale.`;
 const WebSearchToolDefinition = {
     name: WebSearchToolName,
     description: WebSearchToolDescription,

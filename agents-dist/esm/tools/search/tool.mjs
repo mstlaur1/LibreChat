@@ -14,6 +14,8 @@ import { Constants } from '../../common/enum.mjs';
 const MAX_OUTPUT_CHARS = 6000;
 // Local synthesis: runs AFTER the search pipeline to synthesize cleaned,
 // reranked highlights into a coherent answer with inline [N] citations.
+// Set LOCAL_SYNTH_BYPASS=1 to skip synthesis and return raw formatted results.
+const SYNTH_BYPASS = process.env.LOCAL_SYNTH_BYPASS === '1';
 const SYNTH_URL = process.env.LOCAL_SYNTH_URL || 'http://localhost:8087/v1/chat/completions';
 const SYNTH_TIMEOUT = 30000;
 const SYNTH_MAX_SOURCES = 5;
@@ -29,7 +31,10 @@ function computeQualitySignals(query, sources, results) {
         .toLowerCase()
         .split(/\s+/)
         .filter((w) => w.length > 2);
-    const allText = sources.map((s) => `${s.title} ${s.content}`).join(' ').toLowerCase();
+    const allText = sources
+        .map((s) => `${s.title} ${s.content}`)
+        .join(' ')
+        .toLowerCase();
     const coverage = keywords.length > 0
         ? keywords.filter((kw) => allText.includes(kw)).length / keywords.length
         : 1;
@@ -47,9 +52,7 @@ function computeQualitySignals(query, sources, results) {
             }
         }
     }
-    const avgScore = scores.length > 0
-        ? scores.reduce((a, b) => a + b, 0) / scores.length
-        : 0;
+    const avgScore = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
     return {
         sourcesCited: sources.length,
         queryTermCoverage: coverage,
@@ -63,8 +66,11 @@ function computeQualitySignals(query, sources, results) {
  * Format quality signals as a compact hint line for the 122B model.
  */
 function formatQualityHint(signals) {
-    const rel = signals.avgRelevance >= 0.5 ? 'high'
-        : signals.avgRelevance >= 0.2 ? 'medium' : 'low';
+    const rel = signals.avgRelevance >= 0.5
+        ? 'high'
+        : signals.avgRelevance >= 0.2
+            ? 'medium'
+            : 'low';
     const cov = Math.round(signals.queryTermCoverage * 100);
     return `[Quality: ${signals.sourcesCited} sources, keyword coverage: ${cov}%, relevance: ${rel}, min source: ${signals.minSourceChars} chars]`;
 }
@@ -146,6 +152,7 @@ async function tryLocalSynthesis(query, results, logger) {
         for (let i = 0; i < sources.length; i++) {
             lines.push(`[${i + 1}] ${sources[i].url}`);
         }
+        lines.push('', 'IMPORTANT: You must cite sources using [1], [2], etc. inline in your response. Every claim from the sources must have a citation.');
         logger.info('Local synthesis: %d chars from %d sources via 4B | %s', answer.length, sources.length, qualityHint);
         return { text: lines.join('\n'), references };
     }
@@ -455,7 +462,7 @@ function createTool({ schema, search, logger, onSearchResults: _onSearchResults,
         // Try local 4B synthesis for text queries (skip for images/videos)
         let output;
         let references;
-        if (!images && !videos) {
+        if (!images && !videos && !SYNTH_BYPASS) {
             const tSynthStart = Date.now();
             const synthesized = await tryLocalSynthesis(query, searchResult, logger);
             const tSynthDone = Date.now();

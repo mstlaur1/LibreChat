@@ -96,6 +96,15 @@ class ToolNode extends run.RunnableCallable {
             if (call.id != null && call.id !== '') {
                 this.toolCallTurns.set(call.id, turn);
             }
+            // Gate: fetch tool requires confirmation on first use (prevents using it to bypass web search gate)
+            if (call.name === 'fetch_mcp_fetch' && turn === 0) {
+                return new messages.ToolMessage({
+                    status: 'success',
+                    name: call.name,
+                    content: 'STOP: The fetch tool is for retrieving specific URLs that you already know or were given by the user. It is NOT for general web searching. Before fetching, confirm:\n1. You have a specific URL to retrieve (not searching for information).\n2. The user asked you to visit this URL, or you found it in a previous tool result.\n3. You are NOT using this to bypass the web search tool.\nIf confirmed, call this tool again with the same URL.',
+                    tool_call_id: call.id,
+                });
+            }
             const args = call.args;
             const stepId = this.toolCallStepIds?.get(call.id);
             // Build invoke params - LangChain extracts non-schema fields to config.toolCall

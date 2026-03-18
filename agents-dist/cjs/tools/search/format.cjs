@@ -206,12 +206,15 @@ function formatResultsForLLM(_turn, results) {
         outputLines.push(preamble);
         outputLines.push('');
     }
-    const formatSources = (sources, label) => {
+    // Global sequential counter so citations [1],[2],[3] match reference order
+    let sourceNum = 0;
+    const formatSources = (sources) => {
         if (!sources?.length)
             return;
         for (let i = 0; i < sources.length; i++) {
             const s = sources[i];
-            outputLines.push(`[${label} ${i + 1}] ${s.title || '(no title)'}`);
+            sourceNum++;
+            outputLines.push(`[${sourceNum}] ${s.title || '(no title)'}`);
             outputLines.push(s.link);
             const meta = [s.attribution, s.date].filter(Boolean).join(' | ');
             if (meta)
@@ -246,8 +249,8 @@ function formatResultsForLLM(_turn, results) {
             outputLines.push('');
         }
     };
-    formatSources(results.organic, 'Source');
-    formatSources(results.topStories, 'News');
+    formatSources(results.organic);
+    formatSources(results.topStories);
     // Format video results with metadata (duration, date, channel)
     if (results.videos?.length) {
         for (let i = 0; i < results.videos.length; i++) {
@@ -273,6 +276,10 @@ function formatResultsForLLM(_turn, results) {
                 });
             }
         }
+    }
+    // Citation instruction so the model produces [1],[2] refs the proxy can map
+    if (sourceNum > 0) {
+        outputLines.push('Cite sources inline as [1], [2], etc. in your response.');
     }
     return {
         output: outputLines.join('\n').trim(),
