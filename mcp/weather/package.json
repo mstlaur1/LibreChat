@@ -1,0 +1,11 @@
+{
+  "name": "@mstlaur1/weather-mcp",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Lightweight MCP server for Open-Meteo weather forecasts",
+  "main": "index.js",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.2",
+    "zod": "^3.22.4"
+  }
+}
