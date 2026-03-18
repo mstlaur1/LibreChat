@@ -209,12 +209,15 @@ function processSingleValue({
   user,
   body = undefined,
   isHeader = false,
+  dbSourced = false,
 }: {
   originalValue: string;
   customUserVars?: Record<string, string>;
   user?: Partial<IUser>;
   body?: RequestBody;
   isHeader?: boolean;
+  /** When true, only resolve customUserVars — skip env vars, user/OpenID/body placeholders */
+  dbSourced?: boolean;
 }): string {
   // Type guard: ensure we're working with a string
   if (typeof originalValue !== 'string') {
