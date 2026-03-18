@@ -4,15 +4,14 @@
 FROM node:20-alpine AS node
 
 # Install jemalloc
-RUN apk add --no-cache jemalloc
-RUN apk add --no-cache python3
+RUN apk add --no-cache jemalloc python3 coreutils
 
 # Set environment variable to use jemalloc
 ENV LD_PRELOAD=/usr/lib/libjemalloc.so.2
 
-# Add `uv` for extended MCP support
+# Add `uv` for extended MCP support and pre-cache mcp-server-fetch
 COPY --from=ghcr.io/astral-sh/uv:0.9.5-python3.12-alpine /usr/local/bin/uv /usr/local/bin/uvx /bin/
-RUN uv --version
+RUN uv --version && uvx --from mcp-server-fetch python3 -c "pass"
 
 # Set configurable max-old-space-size with default
 ARG NODE_MAX_OLD_SPACE_SIZE=6144
