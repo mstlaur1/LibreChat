@@ -44,9 +44,10 @@ const Markdown = memo(({ content = '', isLatestMessage }: TContentProps) => {
       [
         rehypeHighlight,
         {
-          detect: true,
+          detect: false,
           ignoreMissing: true,
           subset: langSubset,
+          plainText: ['text', 'plaintext', 'txt'],
         },
       ],
     ],
