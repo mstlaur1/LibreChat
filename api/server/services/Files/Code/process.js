@@ -157,6 +157,11 @@ const processCodeOutput = async ({
       const usage = isUpdate ? (claimed.usage ?? 0) + 1 : 1;
       const _file = await convertImage(req, buffer, 'high', `${file_id}${fileExt}`);
       const filepath = usage > 1 ? `${_file.filepath}?v=${Date.now()}` : _file.filepath;
+      // Preserve original mime type for animated images (GIF, animated WebP)
+      const outputExt = path.extname(_file.filepath).toLowerCase();
+      const imageType = (outputExt === '.gif') ? 'image/gif'
+        : (outputExt === '.webp') ? 'image/webp'
+        : `image/${appConfig.imageOutputType}`;
       const file = {
         ..._file,
         filepath,
@@ -166,7 +171,7 @@ const processCodeOutput = async ({
         filename: safeName,
         conversationId,
         user: req.user.id,
-        type: `image/${appConfig.imageOutputType}`,
+        type: imageType,
         createdAt: isUpdate ? claimed.createdAt : formattedDate,
         updatedAt: formattedDate,
         source: appConfig.fileStrategy,

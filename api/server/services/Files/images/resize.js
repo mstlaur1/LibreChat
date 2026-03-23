@@ -78,14 +78,24 @@ async function resizeImageBuffer(inputBuffer, resolution, endpoint) {
     throw new Error('Invalid resolution parameter');
   }
 
-  const resizedBuffer = await sharp(inputBuffer).rotate().resize(resizeOptions).toBuffer();
+  // Detect animated images (GIF, animated WebP) and preserve all frames
+  const inputMeta = await sharp(inputBuffer).metadata();
+  const isAnimated = (inputMeta.pages ?? 1) > 1;
 
-  const resizedMetadata = await sharp(resizedBuffer).metadata();
+  let pipeline = sharp(inputBuffer, isAnimated ? { animated: true, pages: -1 } : undefined);
+  if (!isAnimated) {
+    pipeline = pipeline.rotate();
+  }
+  const resizedBuffer = await pipeline.resize(resizeOptions).toBuffer();
+
+  const resizedMetadata = await sharp(resizedBuffer, isAnimated ? { animated: true, pages: -1 } : undefined).metadata();
   return {
     buffer: resizedBuffer,
     bytes: resizedMetadata.size,
     width: resizedMetadata.width,
-    height: resizedMetadata.height,
+    // For animated images, Sharp reports total height (all frames stacked). Divide by page count for single-frame height.
+    height: isAnimated ? Math.round((resizedMetadata.height ?? 0) / (resizedMetadata.pages ?? 1)) : resizedMetadata.height,
+    animated: isAnimated,
   };
 }
 

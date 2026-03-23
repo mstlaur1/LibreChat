@@ -37,15 +37,22 @@ async function convertImage(req, file, resolution = 'high', basename = '') {
       buffer: resizedBuffer,
       width,
       height,
+      animated,
     } = await resizeImageBuffer(inputBuffer, resolution);
 
-    // Check if the file is already in target format; if it isn't, convert it:
-    const targetExtension = `.${appConfig.imageOutputType}`;
-    if (extension === targetExtension) {
+    // Animated images (GIF, animated WebP): keep original format to preserve animation
+    if (animated) {
       outputBuffer = resizedBuffer;
+      // Keep original extension
     } else {
-      outputBuffer = await sharp(resizedBuffer).toFormat(appConfig.imageOutputType).toBuffer();
-      extension = targetExtension;
+      // Check if the file is already in target format; if it isn't, convert it:
+      const targetExtension = `.${appConfig.imageOutputType}`;
+      if (extension === targetExtension) {
+        outputBuffer = resizedBuffer;
+      } else {
+        outputBuffer = await sharp(resizedBuffer).toFormat(appConfig.imageOutputType).toBuffer();
+        extension = targetExtension;
+      }
     }
 
     // Generate a new filename for the output file
